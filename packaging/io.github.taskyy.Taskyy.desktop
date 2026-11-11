@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Taskyy
+GenericName=System Monitor
+Comment=Monitor system resources and manage processes
+Exec=taskyy
+Icon=io.github.taskyy.Taskyy
+StartupWMClass=io.github.taskyy.Taskyy
+Terminal=false
+Categories=System;Monitor;
+Keywords=CPU;Memory;Processes;Task Manager;

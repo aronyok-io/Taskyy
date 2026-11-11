@@ -1,0 +1,564 @@
+import { LineEdit, ListView, Slider, ScrollView, Palette as WidgetPalette } from "std-widgets.slint";
+
+export struct Row { name: string, pid: string, cpu: string, memory: string }
+export struct Metric { title: string, detail: string }
+
+export global Palette {
+    in-out property <bool> light: true;
+    changed light => { WidgetPalette.color-scheme = self.light ? ColorScheme.light : ColorScheme.dark; }
+    in-out property <color> start;
+    in-out property <color> middle;
+    in-out property <color> end;
+    in-out property <bool> three-stops;
+    in-out property <float> direction;
+    in-out property <float> intensity;
+    out property <color> canvas: light ? #f7f5fc : #12131d;
+    out property <color> panel: light ? #ffffff.with-alpha(0.21) : #100a1a.with-alpha(0.19);
+    out property <color> dialog: light ? #fbf7ff : #262031;
+    out property <color> stripe: light ? #ffffff.with-alpha(0.125) : #090612.with-alpha(0.12);
+    out property <color> divider: light ? #252039.with-alpha(0.15) : #ffffff.with-alpha(0.13);
+    out property <color> text: light ? #252039 : #f3efff;
+    out property <color> secondary: light ? #40354d : #eee7f8;
+    out property <color> accent: light ? #563399 : #cfbfff;
+    out property <color> accent-wash: accent.with-alpha(light ? 0.10 : 0.16);
+    out property <color> hover: text.with-alpha(light ? 0.055 : 0.085);
+    out property <color> muted: light ? #524866 : #c0b6d1;
+    out property <brush> preview: three-stops
+        ? @linear-gradient(direction * 1deg, start, middle, end)
+        : @linear-gradient(direction * 1deg, start, end);
+}
+
+component Label inherits Text {
+    font-size: 15px;
+    color: Palette.text;
+    vertical-alignment: center;
+    overflow: elide;
+}
+
+component NavItem inherits Rectangle {
+    in property <string> label;
+    in property <bool> active;
+    in property <bool> align-start;
+    in property <bool> rail;
+    in property <string> glyph;
+    in property <string> description: label;
+    callback activated();
+    height: 48px;
+    border-radius: 8px;
+    background: active ? Palette.accent-wash : hit.has-hover ? Palette.hover : transparent;
+    animate background { duration: 140ms; }
+    if root.rail && root.active: Rectangle {
+        width: 3px; height: 20px; x: 1px; y: (parent.height - self.height) / 2;
+        border-radius: 1.5px; background: Palette.accent;
+    }
+    if root.glyph != "": Label {
+        x: 12px; width: 20px;
+        text: root.glyph; color: root.active ? Palette.accent : Palette.muted;
+    }
+    Label {
+        text: root.label;
+        horizontal-alignment: root.align-start ? left : center;
+        x: root.glyph != "" ? 38px : 0px;
+        width: parent.width - self.x;
+        color: root.active ? Palette.accent : Palette.text;
+        font-weight: root.active ? 700 : 500;
+    }
+    hit := TouchArea { clicked => { root.activated(); } }
+    accessible-role: button;
+    accessible-label: description;
+    accessible-action-default => { root.activated(); }
+}
+
+component Action inherits Rectangle {
+    in property <string> text;
+    in property <bool> primary;
+    callback clicked();
+    height: 40px;
+    border-radius: 9px;
+    border-width: 1px;
+    border-color: key.has-focus || root.primary ? Palette.accent : Palette.divider;
+    background: root.primary ? (hit.has-hover ? Palette.accent.with-alpha(0.86) : Palette.accent)
+        : hit.pressed ? Palette.stripe : hit.has-hover ? Palette.hover : Palette.panel;
+    animate background { duration: 140ms; }
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-action-default => { root.clicked(); }
+    Label {
+        text: root.text; horizontal-alignment: center;
+        font-weight: root.primary ? 700 : 500;
+        color: root.primary ? (Palette.light ? white : #201435) : Palette.text;
+    }
+    key := FocusScope {
+        key-pressed(event) => {
+            if event.text == " " || event.text == Key.Return {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+    hit := TouchArea { clicked => { key.focus(); root.clicked(); } }
+}
+
+component PageHeading inherits VerticalLayout {
+    height: 78px;
+    in property <string> heading;
+    in property <string> detail;
+    spacing: 5px;
+    Label { text: root.heading; height: 47px; font-size: 33px; font-weight: 700; }
+    Label { text: root.detail; height: 20px; color: Palette.muted; font-size: 15px; }
+    Rectangle { height: 1px; background: Palette.divider; }
+}
+
+export global Chart {
+    pure callback trace([float], float, color) -> image;
+}
+
+component History inherits Rectangle {
+    in property <string> label;
+    in property <[float]> samples;
+    in property <float> maximum: 100;
+    in property <string> axis-top: "100%";
+    in property <string> axis-bottom: "0%";
+    background: Palette.panel;
+    border-radius: 14px;
+    border-width: 1px;
+    border-color: Palette.divider;
+    vertical-stretch: 1;
+    min-height: 92px;
+    VerticalLayout {
+        padding: 14px;
+        spacing: 8px;
+        Label { text: root.label; height: 25px; font-size: 18px; font-weight: 700; }
+        HorizontalLayout {
+            spacing: 6px;
+            VerticalLayout {
+                Label { text: root.axis-top; color: Palette.secondary; font-size: 13px; }
+                Rectangle { vertical-stretch: 1; }
+                Label { text: root.axis-bottom; color: Palette.secondary; font-size: 13px; }
+            }
+            plot := Rectangle {
+                horizontal-stretch: 1;
+                vertical-stretch: 1;
+                background: Palette.stripe;
+                clip: true;
+                for line in [0.25, 0.5, 0.75, 1.0]: Rectangle {
+                    y: plot.height * line - 1px; height: 1px; background: Palette.divider;
+                }
+                Image {
+                    width: plot.width;
+                    height: plot.height;
+                    image-fit: fill;
+                    source: Chart.trace(root.samples, root.maximum, Palette.accent);
+                }
+                if root.samples.length == 1: Rectangle {
+                    width: 5px;
+                    height: 5px;
+                    x: plot.width - self.width;
+                    y: (plot.height - self.height) * (1 - clamp(root.samples[0] / root.maximum, 0, 1));
+                    border-radius: 2.5px;
+                    background: Palette.accent;
+                }
+            }
+        }
+    }
+}
+
+component Metrics inherits ListView {
+    in property <[Metric]> entries;
+    for entry in root.entries: Rectangle {
+        height: 55px;
+        background: Palette.stripe;
+        Rectangle { y: parent.height - 1px; height: 1px; background: Palette.divider; }
+        VerticalLayout {
+            padding-left: 10px;
+            padding-right: 10px;
+            Label { text: entry.title; font-weight: 700; }
+            Label { text: entry.detail; color: Palette.secondary; }
+        }
+    }
+}
+
+component ColorField inherits HorizontalLayout {
+    in property <string> title;
+    in property <color> swatch;
+    in property <string> value;
+    callback edited(string);
+    spacing: 8px;
+    Rectangle { width: 28px; height: 28px; border-radius: 6px; background: root.swatch; }
+    Label { text: root.title; width: 64px; }
+    LineEdit {
+        text: root.value;
+        placeholder-text: "#RRGGBB or R,G,B";
+        edited => { root.edited(self.text); }
+    }
+}
+
+component ColorPicker inherits VerticalLayout {
+    in property <color> selected-color;
+    callback picked(color);
+    property <float> hue: root.selected-color.to-hsv().hue;
+    property <float> saturation: root.selected-color.to-hsv().saturation;
+    property <float> brightness: root.selected-color.to-hsv().value;
+
+    spacing: 6px;
+    spectrum := Rectangle {
+        height: 104px;
+        clip: true;
+        background: @linear-gradient(90deg, white, Colors.hsv(root.hue, 1, 1));
+        Rectangle { background: @linear-gradient(180deg, transparent, black); }
+        Rectangle {
+            width: 12px;
+            height: 12px;
+            x: clamp(root.saturation * parent.width - self.width / 2, 0px, parent.width - self.width);
+            y: clamp((1 - root.brightness) * parent.height - self.height / 2, 0px, parent.height - self.height);
+            border-width: 2px;
+            border-color: white;
+            border-radius: 6px;
+            background: root.selected-color;
+        }
+        pointer := TouchArea {
+            clicked => { root.pick(self.mouse-x, self.mouse-y); }
+            moved => { if self.pressed { root.pick(self.mouse-x, self.mouse-y); } }
+        }
+    }
+    function pick(x: length, y: length) {
+        root.picked(Colors.hsv(root.hue,
+            clamp(x / spectrum.width, 0, 1),
+            clamp(1 - y / spectrum.height, 0, 1)));
+    }
+    Rectangle {
+        height: 5px;
+        background: @linear-gradient(90deg, #ff0000 0%, #ffff00 16%, #00ff00 33%, #00ffff 50%, #0000ff 67%, #ff00ff 83%, #ff0000 100%);
+    }
+    Slider {
+        accessible-label: "Hue";
+        minimum: 0;
+        maximum: 359;
+        value: root.hue;
+        changed(value) => { root.picked(Colors.hsv(value, max(root.saturation, 0.2), max(root.brightness, 0.25))); }
+    }
+}
+
+export component Taskyy inherits Window {
+    title: "Taskyy";
+    min-width: 680px;
+    min-height: 500px;
+    preferred-width: 1020px;
+    preferred-height: 760px;
+    background: Palette.canvas;
+    icon: @image-url("../assets/taskyy.png");
+
+    in property <[float]> cpu-history;
+    in property <[float]> memory-history;
+    in property <[float]> rx-history;
+    in property <[float]> tx-history;
+    in property <[float]> gpu-history;
+    in property <float> network-ceiling: 1;
+    in property <string> network-axis: "1 B/s";
+    in property <[Metric]> cpu-metrics;
+    in property <[Metric]> gpu-metrics;
+    in property <[Metric]> network-metrics;
+    in property <[Metric]> disk-metrics;
+    out property <int> performance-page;
+    in property <string> settings-status;
+    in-out property <string> start-hex;
+    in-out property <string> middle-hex;
+    in-out property <string> end-hex;
+    callback color-edited(int, string);
+    callback color-picked(int, color);
+    property <int> active-stop: 0;
+    callback apply-theme();
+    callback cancel-theme();
+    callback reset-theme();
+    callback random-theme();
+    out property <int> page: 0;
+    changed page => { if self.page == 0 { self.filter-changed(); } }
+
+    in property <[Row]> rows;
+    in property <string> summary: "Sampling system activity…";
+    in-out property <string> query;
+    in-out property <int> sort-column: 2;
+    in-out property <string> pending-process;
+    in property <string> process-status;
+    callback filter-changed();
+    callback request-termination(string);
+    callback inspect-process(string);
+    in-out property <string> inspected-process;
+    in property <[Metric]> process-details;
+    callback resolve-termination(bool);
+    property <bool> collapsed: false;
+
+    Rectangle {
+        background: Palette.preview;
+        opacity: Palette.intensity / 100 * (Palette.light ? 0.25 : 0.34);
+    }
+    HorizontalLayout {
+        Rectangle {
+            width: root.collapsed ? 68px : 190px;
+            Rectangle { x: parent.width - 1px; width: 1px; background: Palette.divider; }
+            background: Palette.panel;
+            VerticalLayout {
+                padding: 9px;
+                spacing: 6px;
+                Image {
+                    source: @image-url("../assets/taskyy.png");
+                    height: root.collapsed ? 42px : 78px;
+                    image-fit: contain;
+                }
+                NavItem {
+                    label: root.collapsed ? "»" : "Taskyy    ‹";
+                    description: root.collapsed ? "Expand sidebar" : "Collapse sidebar";
+                    activated => { root.collapsed = !root.collapsed; }
+                }
+                NavItem {
+                    label: root.collapsed ? "☷" : "Processes";
+                    description: "Processes";
+                    glyph: root.collapsed ? "" : "☷";
+                    rail: true;
+                    align-start: !root.collapsed;
+                    active: root.page == 0;
+                    activated => { root.page = 0; }
+                }
+                NavItem {
+                    label: root.collapsed ? "▥" : "Performance";
+                    description: "Performance";
+                    glyph: root.collapsed ? "" : "▥";
+                    rail: true;
+                    align-start: !root.collapsed;
+                    active: root.page == 1;
+                    activated => { root.page = 1; }
+                }
+                NavItem {
+                    label: root.collapsed ? "◐" : "Appearance";
+                    description: "Appearance";
+                    glyph: root.collapsed ? "" : "◐";
+                    rail: true;
+                    align-start: !root.collapsed;
+                    active: root.page == 2;
+                    activated => { root.page = 2; }
+                }
+                Rectangle { vertical-stretch: 1; }
+            }
+        }
+        if root.page == 0: VerticalLayout {
+            horizontal-stretch: 1;
+            padding: 22px;
+            spacing: 12px;
+            PageHeading { heading: "Processes"; detail: root.summary; }
+            LineEdit {
+                placeholder-text: "Search by process name or PID";
+                text: root.query;
+                edited => { root.query = self.text; root.filter-changed(); }
+            }
+            HorizontalLayout {
+                padding: 4px;
+                padding-right: 16px;
+                for label[index] in ["Name", "PID", "CPU", "Memory"]: NavItem {
+                    label: label + (root.sort-column == index ? (index < 2 ? " ▴" : " ▾") : "");
+                    align-start: true;
+                    active: root.sort-column == index;
+                    height: 32px;
+                    min-width: index == 0 ? 0px : index == 3 ? 106px : 75px;
+                    max-width: index == 0 ? 10000px : index == 3 ? 106px : 75px;
+                    horizontal-stretch: index == 0 ? 1 : 0;
+                    activated => { root.sort-column = index; root.filter-changed(); }
+                }
+                Rectangle { width: 64px; }
+            }
+            if root.process-status != "": Rectangle {
+                background: Palette.panel;
+                border-radius: 6px;
+                height: 36px;
+                Label { x: 8px; width: parent.width - 16px; text: root.process-status; }
+            }
+            ListView {
+                vertical-stretch: 1;
+                for row[index] in root.rows: Rectangle {
+                    height: 45px;
+                    background: Math.mod(index, 2) == 0 ? Palette.stripe : transparent;
+                    Rectangle { y: parent.height - 1px; height: 1px; background: Palette.divider; }
+                    HorizontalLayout {
+                        padding: 4px;
+                        padding-right: 16px;
+                        NavItem {
+                            label: row.name;
+                            align-start: true;
+                            horizontal-stretch: 1;
+                            min-width: 0;
+                            height: 37px;
+                            activated => { root.inspect-process(row.pid); }
+                        }
+                        Label { text: row.pid; width: 75px; }
+                        Label { text: row.cpu; width: 75px; }
+                        Label { text: row.memory; width: 106px; }
+                        Action { width: 64px; height: 36px; text: "End…"; clicked => { root.request-termination(row.pid); } }
+                    }
+                }
+            }
+        }
+        if root.page == 1: VerticalLayout {
+            horizontal-stretch: 1;
+            padding: 22px;
+            spacing: 12px;
+            PageHeading { heading: "Performance"; detail: root.summary; }
+            HorizontalLayout {
+                height: 48px;
+                spacing: 6px;
+                for tab[index] in ["CPU & RAM", "GPU", "Network", "Storage"]: NavItem {
+                    horizontal-stretch: 1;
+                    min-width: 0px;
+                    label: tab;
+                    active: root.performance-page == index;
+                    activated => { root.performance-page = index; }
+                }
+            }
+            if root.performance-page == 0: VerticalLayout {
+                vertical-stretch: 1;
+                horizontal-stretch: 1;
+                spacing: 8px;
+                History { label: "CPU · last 60 samples"; samples: root.cpu-history; }
+                History { label: "RAM · last 60 samples"; samples: root.memory-history; }
+                Metrics { entries: root.cpu-metrics; height: 94px; }
+            }
+            if root.performance-page == 1: VerticalLayout {
+                vertical-stretch: 1;
+                horizontal-stretch: 1;
+                spacing: 8px;
+                if root.gpu-history.length > 0: History { label: "Busiest measured GPU · last 60 samples"; samples: root.gpu-history; }
+                Metrics { entries: root.gpu-metrics; }
+            }
+            if root.performance-page == 2: VerticalLayout {
+                vertical-stretch: 1;
+                horizontal-stretch: 1;
+                spacing: 8px;
+                History { label: "Receive · last 60 samples"; samples: root.rx-history; maximum: root.network-ceiling; axis-top: root.network-axis; axis-bottom: "0 B/s"; }
+                History { label: "Send · last 60 samples"; samples: root.tx-history; maximum: root.network-ceiling; axis-top: root.network-axis; axis-bottom: "0 B/s"; }
+                Metrics { entries: root.network-metrics; height: 96px; }
+            }
+            if root.performance-page == 3: Metrics { entries: root.disk-metrics; vertical-stretch: 1; }
+        }
+        if root.page == 2: VerticalLayout {
+            horizontal-stretch: 1;
+            padding: 22px;
+            spacing: 12px;
+            PageHeading { heading: "Appearance Studio"; detail: "Preview changes live. Apply saves your theme."; }
+            ScrollView {
+                vertical-stretch: 1;
+                content-width: self.visible-width;
+                content-height: max(self.visible-height, Palette.three-stops ? 646px : 585px);
+                VerticalLayout {
+                    spacing: 8px;
+                    Rectangle {
+                        height: 68px;
+                        background: Palette.preview;
+                    }
+                    Rectangle {
+                        background: Palette.panel;
+                        border-radius: 12px;
+                        VerticalLayout {
+                            padding: 12px;
+                            spacing: 8px;
+                            HorizontalLayout {
+                                spacing: 8px;
+                                Action { primary: !Palette.light; text: "Dark"; clicked => { Palette.light = false; } }
+                                Action { primary: Palette.light; text: "Light"; clicked => { Palette.light = true; } }
+                            }
+                            HorizontalLayout {
+                                spacing: 6px;
+                                Action { text: root.active-stop == 0 ? "✓ Start" : "Start"; clicked => { root.active-stop = 0; } }
+                                if Palette.three-stops: Action {
+                                    text: root.active-stop == 1 ? "✓ Middle" : "Middle";
+                                    clicked => { root.active-stop = 1; }
+                                }
+                                Action { text: root.active-stop == 2 ? "✓ End" : "End"; clicked => { root.active-stop = 2; } }
+                            }
+                            ColorPicker {
+                                selected-color: root.active-stop == 0 ? Palette.start : root.active-stop == 1 ? Palette.middle : Palette.end;
+                                picked(value) => { root.color-picked(root.active-stop, value); }
+                            }
+                            ColorField {
+                                title: "Start"; value: root.start-hex; swatch: Palette.start;
+                                edited(value) => { root.color-edited(0, value); }
+                            }
+                            if Palette.three-stops: ColorField {
+                                title: "Middle"; value: root.middle-hex; swatch: Palette.middle;
+                                edited(value) => { root.color-edited(1, value); }
+                            }
+                            ColorField {
+                                title: "End"; value: root.end-hex; swatch: Palette.end;
+                                edited(value) => { root.color-edited(2, value); }
+                            }
+                            Action {
+                                text: Palette.three-stops ? "Remove middle stop" : "Add middle stop";
+                                clicked => {
+                                    Palette.three-stops = !Palette.three-stops;
+                                    root.active-stop = Palette.three-stops ? 1 : 0;
+                                }
+                            }
+                            Label { text: "Gradient direction · " + round(Palette.direction) + "°"; }
+                            Slider { minimum: 0; maximum: 360; value <=> Palette.direction; }
+                            Label { text: "Color intensity · " + round(Palette.intensity) + "%"; }
+                            Slider { minimum: 0; maximum: 100; value <=> Palette.intensity; }
+                            Action { text: "Surprise me"; clicked => { root.random-theme(); } }
+                        }
+                    }
+                }
+            }
+            if root.settings-status != "": Rectangle {
+                background: Palette.panel;
+                height: 32px;
+                Label { x: 8px; width: parent.width - 16px; text: root.settings-status; }
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                Action { text: "Reset"; clicked => { root.active-stop = 0; root.reset-theme(); } }
+                Action { text: "Cancel"; clicked => { root.active-stop = 0; root.cancel-theme(); } }
+                Action { primary: true; text: "Apply"; clicked => { root.apply-theme(); } }
+            }
+        }
+    }
+    if root.inspected-process != "": Rectangle {
+        background: black.with-alpha(0.60);
+        TouchArea {}
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: min(740px, parent.width - 32px);
+            height: min(480px, parent.height - 32px);
+            background: Palette.dialog;
+            border-radius: 12px;
+            VerticalLayout {
+                padding: 14px;
+                spacing: 8px;
+                Label { text: root.inspected-process; font-weight: 700; font-size: 20px; }
+                Metrics { entries: root.process-details; vertical-stretch: 1; }
+                Action { text: "Close"; clicked => { root.inspected-process = ""; } }
+            }
+        }
+    }
+    if root.pending-process != "": Rectangle {
+        background: black.with-alpha(0.60);
+        TouchArea {}
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: min(440px, parent.width - 32px);
+            height: 160px;
+            background: Palette.dialog;
+            border-radius: 12px;
+            VerticalLayout {
+                padding: 14px;
+                spacing: 8px;
+                Label { text: "End process?"; font-weight: 700; font-size: 20px; }
+                Label { text: root.pending-process; }
+                Label { text: "The process will receive SIGTERM."; color: Palette.secondary; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Action { text: "Cancel"; clicked => { root.resolve-termination(false); } }
+                    Action { text: "End process"; clicked => { root.resolve-termination(true); } }
+                }
+            }
+        }
+    }
+}
