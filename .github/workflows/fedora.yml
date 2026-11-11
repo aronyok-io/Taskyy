@@ -1,0 +1,29 @@
+name: Fedora build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: fedora:44
+    steps:
+      - name: Install build dependencies
+        run: dnf -y install git cargo gcc pkgconf-pkg-config fontconfig-devel rpm-build desktop-file-utils ImageMagick
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - run: cargo test --locked
+      - run: bash packaging/build-rpm.sh dist
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: taskyy-fedora-44-x86_64
+          path: dist/*.rpm
+          if-no-files-found: error

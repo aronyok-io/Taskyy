@@ -1,0 +1,21 @@
+name: Bug report
+description: Report a reproducible problem in Taskyy
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Taskyy version
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Linux distribution and desktop
+      placeholder: Fedora KDE, Wayland
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps and expected behavior
+      description: Include what happened. Redact usernames, hostnames, process arguments, and credentials.
+    validations:
+      required: true

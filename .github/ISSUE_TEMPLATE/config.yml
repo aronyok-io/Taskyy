@@ -1,0 +1,7 @@
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/aronyok-io/Taskyy/discussions
+    about: Ask for help or discuss a feature.
+  - name: Security vulnerabilities
+    url: https://github.com/aronyok-io/Taskyy/security/advisories/new
+    about: Report a vulnerability privately.

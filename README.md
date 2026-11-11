@@ -4,6 +4,8 @@
 
 Taskyy is a native Linux system monitor and task manager built with Rust and Slint. It runs locally and stores appearance settings in your user configuration directory.
 
+[Discussions](https://github.com/aronyok-io/Taskyy/discussions) · [Report a bug](https://github.com/aronyok-io/Taskyy/issues/new/choose) · [Contributing](CONTRIBUTING.md)
+
 ## Install on Fedora 44 KDE (x86_64)
 
 Build the RPM using the instructions below, then open it in Discover or install it from the project directory:
