@@ -8,10 +8,10 @@ Taskyy is a native Linux system monitor and task manager built with Rust and Sli
 
 ## Install on Fedora 44 KDE (x86_64)
 
-Build the RPM using the instructions below, then open it in Discover or install it from the project directory:
+Download the x86_64 RPM from [GitHub Releases](https://github.com/aronyok-io/Taskyy/releases/latest). Open it in Discover or install it from the download directory:
 
 ```sh
-sudo dnf install ./dist/taskyy-0.2.4-1.fc44.x86_64.rpm
+sudo dnf install ./taskyy-0.2.4-1.fc44.x86_64.rpm
 ```
 
 Then open **Taskyy** from the KDE application launcher. If you pinned a source-run instance earlier, unpin that entry and pin Taskyy from the launcher. The desktop file and window both use the application ID `io.github.taskyy.Taskyy`.
